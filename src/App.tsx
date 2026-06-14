@@ -13,6 +13,7 @@ type Params = {
   speedVariance: number
   preferredGap: number
   gapVariance: number
+  reactionTime: number
   speedGain: number
   followGain: number
   dampingGain: number
@@ -82,6 +83,7 @@ const defaultParams: Params = {
   speedVariance: 0.49,
   preferredGap: 37,
   gapVariance: 0.28,
+  reactionTime: 1,
   speedGain: 0.22,
   followGain: 0.1,
   dampingGain: 0,
@@ -123,6 +125,7 @@ const controls: Array<{
   { key: 'speedVariance', label: 'Speed variance', min: 0, max: 0.6, step: 0.01 },
   { key: 'preferredGap', label: 'Following distance', min: 6, max: 60, step: 1, suffix: ' m' },
   { key: 'gapVariance', label: 'Gap variance', min: 0, max: 0.8, step: 0.01 },
+  { key: 'reactionTime', label: 'Reaction time', min: 0.2, max: 2.5, step: 0.05, suffix: ' s' },
   { key: 'speedGain', label: 'Speed pull', min: 0, max: 0.8, step: 0.01 },
   { key: 'followGain', label: 'String pull', min: 0, max: 0.5, step: 0.01 },
   { key: 'dampingGain', label: 'Relative damping', min: 0, max: 1.4, step: 0.01 },
@@ -188,7 +191,7 @@ function runSimulation(params: Params): Simulation {
   const rand = mulberry32(params.seed)
   const vehicleLength = params.vehicleLength
   const standstillGap = 1.5
-  const reactionTime = 0.9
+  const reactionTime = params.reactionTime
   const carCount = Math.min(params.cars, Math.floor(params.roadLength / (vehicleLength + standstillGap)))
   const spacing = params.roadLength / carCount
   const placementJitter = Math.max(0, spacing - vehicleLength - standstillGap) * 0.4
