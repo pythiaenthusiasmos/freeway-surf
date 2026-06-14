@@ -146,7 +146,7 @@ const diagramControls: Array<{
   { key: 'rotateZ', label: 'Rotate Z', min: -180, max: 180, step: 1, suffix: ' deg' },
   { key: 'startCar', label: 'Starting car', min: 1, max: 180, step: 1 },
   { key: 'selectedCars', label: 'Number of cars', min: 1, max: 100, step: 1 },
-  { key: 'carInterval', label: 'Car interval', min: 1, max: 20, step: 1 },
+  { key: 'carInterval', label: 'Spacing', min: 1, max: 20, step: 1 },
 ]
 
 function mulberry32(seed: number) {
@@ -537,6 +537,10 @@ function App() {
   }
 
   const updateDiagramParam = (key: keyof DiagramParams, value: number) => {
+    if (key === 'startCar' || key === 'selectedCars' || key === 'carInterval') {
+      setShowAllCars(false)
+    }
+
     setDiagramParams((current) => ({ ...current, [key]: value }))
   }
 
