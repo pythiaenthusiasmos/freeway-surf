@@ -6,7 +6,9 @@ The simulation starts with 100 cars on a ring road. Each car has a preferred spe
 
 The road graph plots position left to right and time top to bottom. Each trace is one car.
 
-The phase view plots `x(t)` against `x(t - lag)`, with a 3D projection option that uses time as depth. Axis scale and skew controls make it easier to inspect loop structure and wave shape.
+The phase view plots speed delay coordinates: `v(t)` against `v(t - delta)`, with a 3D projection option that adds `v(t - 2*delta)`. Axis scale, skew, and 3D rotation controls make it easier to inspect loop structure and wave shape.
+
+The phase view can show all cars or a selected sequence by starting car, count, and interval.
 
 ## Run
 

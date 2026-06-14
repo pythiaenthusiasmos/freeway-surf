@@ -31,6 +31,7 @@ type Car = {
 type Sample = {
   t: number
   x: number
+  v: number
 }
 
 type Simulation = {
@@ -46,12 +47,18 @@ type ViewMode = 'road' | 'phase'
 type PhaseMode = '2d' | '3d'
 
 type DiagramParams = {
-  lag: number
+  delta: number
   xScale: number
   yScale: number
   zScale: number
   xSkew: number
   ySkew: number
+  rotateX: number
+  rotateY: number
+  rotateZ: number
+  startCar: number
+  selectedCars: number
+  carInterval: number
 }
 
 const defaultParams: Params = {
@@ -74,12 +81,18 @@ const defaultParams: Params = {
 }
 
 const defaultDiagramParams: DiagramParams = {
-  lag: 8,
+  delta: 4,
   xScale: 1,
   yScale: 1,
   zScale: 0.8,
   xSkew: 0,
   ySkew: 0,
+  rotateX: 24,
+  rotateY: -34,
+  rotateZ: 0,
+  startCar: 3,
+  selectedCars: 4,
+  carInterval: 2,
 }
 
 const controls: Array<{
@@ -115,12 +128,18 @@ const diagramControls: Array<{
   step: number
   suffix?: string
 }> = [
-  { key: 'lag', label: 'Past lag', min: 1, max: 60, step: 1, suffix: ' s' },
+  { key: 'delta', label: 'Delta t', min: 1, max: 40, step: 1, suffix: ' s' },
   { key: 'xScale', label: 'X scale', min: 0.25, max: 2.5, step: 0.05 },
   { key: 'yScale', label: 'Y scale', min: 0.25, max: 2.5, step: 0.05 },
-  { key: 'zScale', label: 'Time depth', min: 0, max: 2, step: 0.05 },
+  { key: 'zScale', label: 'Z scale', min: 0, max: 2, step: 0.05 },
   { key: 'xSkew', label: 'X skew', min: -1.5, max: 1.5, step: 0.05 },
   { key: 'ySkew', label: 'Y skew', min: -1.5, max: 1.5, step: 0.05 },
+  { key: 'rotateX', label: 'Rotate X', min: -90, max: 90, step: 1, suffix: ' deg' },
+  { key: 'rotateY', label: 'Rotate Y', min: -90, max: 90, step: 1, suffix: ' deg' },
+  { key: 'rotateZ', label: 'Rotate Z', min: -180, max: 180, step: 1, suffix: ' deg' },
+  { key: 'startCar', label: 'Starting car', min: 1, max: 180, step: 1 },
+  { key: 'selectedCars', label: 'Number of cars', min: 1, max: 100, step: 1 },
+  { key: 'carInterval', label: 'Car interval', min: 1, max: 20, step: 1 },
 ]
 
 function mulberry32(seed: number) {
@@ -160,7 +179,7 @@ function runSimulation(params: Params): Simulation {
   })).sort((a, b) => a.position - b.position)
 
   const steps = Math.max(2, Math.floor(params.duration / params.dt))
-  const histories: Sample[][] = cars.map((car) => [{ t: 0, x: wrap(car.position, params.roadLength) }])
+  const histories: Sample[][] = cars.map((car) => [{ t: 0, x: wrap(car.position, params.roadLength), v: car.speed }])
   let minimumGap = params.roadLength
   let averageSpeedTotal = 0
 
@@ -225,7 +244,7 @@ function runSimulation(params: Params): Simulation {
       car.speed = safeSpeeds.get(car.id) ?? car.speed
       car.position += car.speed * params.dt
       averageSpeedTotal += car.speed
-      histories[car.id].push({ t: step * params.dt, x: wrap(car.position, params.roadLength) })
+      histories[car.id].push({ t: step * params.dt, x: wrap(car.position, params.roadLength), v: car.speed })
     })
 
     const afterUpdate = [...cars].sort((a, b) => a.position - b.position)
@@ -277,48 +296,51 @@ function buildPhasePaths(
   samples: Sample[],
   width: number,
   height: number,
-  roadLength: number,
-  duration: number,
   diagram: DiagramParams,
   mode: PhaseMode,
+  maxSpeed: number,
 ) {
   const paths: string[] = []
   const sampleDt = samples[1] ? samples[1].t - samples[0].t : 1
-  const lagSteps = Math.max(1, Math.round(diagram.lag / sampleDt))
+  const delaySteps = Math.max(1, Math.round(diagram.delta / sampleDt))
+  const startIndex = mode === '3d' ? delaySteps * 2 : delaySteps
   let current = ''
-  let previousNow = samples[lagSteps]?.x ?? 0
-  let previousPast = samples[0]?.x ?? 0
 
-  for (let index = lagSteps; index < samples.length; index += 1) {
+  for (let index = startIndex; index < samples.length; index += 1) {
     const now = samples[index]
-    const past = samples[index - lagSteps]
-    const nowUnit = now.x / roadLength
-    const pastUnit = past.x / roadLength
-    const timeUnit = now.t / duration
-    const centeredNow = (nowUnit - 0.5) * diagram.xScale
-    const centeredPast = (pastUnit - 0.5) * diagram.yScale
-    const centeredTime = (timeUnit - 0.5) * diagram.zScale
-
-    let x = width / 2 + centeredNow * width * 0.82 + centeredPast * diagram.xSkew * width * 0.32
-    let y = height / 2 - centeredPast * height * 0.82 + centeredNow * diagram.ySkew * height * 0.32
+    const past = samples[index - delaySteps]
+    const older = samples[index - delaySteps * 2] ?? past
+    const centeredNow = (now.v / maxSpeed - 0.5) * diagram.xScale
+    const centeredPast = (past.v / maxSpeed - 0.5) * diagram.yScale
+    const centeredOlder = (older.v / maxSpeed - 0.5) * diagram.zScale
+    let x3 = centeredNow + centeredPast * diagram.xSkew * 0.5
+    let y3 = centeredPast + centeredNow * diagram.ySkew * 0.5
+    let z3 = mode === '3d' ? centeredOlder : 0
 
     if (mode === '3d') {
-      x += centeredTime * width * 0.34
-      y -= centeredTime * height * 0.28
+      const rx = (diagram.rotateX * Math.PI) / 180
+      const ry = (diagram.rotateY * Math.PI) / 180
+      const rz = (diagram.rotateZ * Math.PI) / 180
+      const yAfterX = y3 * Math.cos(rx) - z3 * Math.sin(rx)
+      const zAfterX = y3 * Math.sin(rx) + z3 * Math.cos(rx)
+      y3 = yAfterX
+      z3 = zAfterX
+
+      const xAfterY = x3 * Math.cos(ry) + z3 * Math.sin(ry)
+      const zAfterY = -x3 * Math.sin(ry) + z3 * Math.cos(ry)
+      x3 = xAfterY
+      z3 = zAfterY
+
+      const xAfterZ = x3 * Math.cos(rz) - y3 * Math.sin(rz)
+      const yAfterZ = x3 * Math.sin(rz) + y3 * Math.cos(rz)
+      x3 = xAfterZ
+      y3 = yAfterZ
     }
 
-    const wraps =
-      Math.abs(now.x - previousNow) > roadLength * 0.55 || Math.abs(past.x - previousPast) > roadLength * 0.55
-
-    if (wraps && current) {
-      paths.push(current)
-      current = `M ${x.toFixed(2)} ${y.toFixed(2)}`
-    } else {
-      current += `${current ? ' L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`
-    }
-
-    previousNow = now.x
-    previousPast = past.x
+    const depthPush = mode === '3d' ? z3 * 0.16 : 0
+    const x = width / 2 + (x3 + depthPush) * width * 0.78
+    const y = height / 2 - (y3 - depthPush) * height * 0.78
+    current += `${current ? ' L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`
   }
 
   if (current) {
@@ -328,12 +350,44 @@ function buildPhasePaths(
   return paths
 }
 
+function selectedHistories(histories: Sample[][], diagram: DiagramParams, showAllCars: boolean) {
+  if (showAllCars) {
+    return histories.map((samples, index) => ({ samples, index }))
+  }
+
+  const startIndex = clamp(Math.round(diagram.startCar) - 1, 0, histories.length - 1)
+  const interval = Math.max(1, Math.round(diagram.carInterval))
+  const count = Math.max(1, Math.round(diagram.selectedCars))
+  const selected: Array<{ samples: Sample[]; index: number }> = []
+
+  for (let offset = 0; offset < count; offset += 1) {
+    const index = startIndex + offset * interval
+
+    if (index >= histories.length) {
+      break
+    }
+
+    selected.push({ samples: histories[index], index })
+  }
+
+  return selected
+}
+
 function App() {
   const [params, setParams] = useState(defaultParams)
   const [diagramParams, setDiagramParams] = useState(defaultDiagramParams)
   const [viewMode, setViewMode] = useState<ViewMode>('road')
   const [phaseMode, setPhaseMode] = useState<PhaseMode>('2d')
+  const [showAllCars, setShowAllCars] = useState(true)
   const simulation = useMemo(() => runSimulation(params), [params])
+  const phaseHistories = useMemo(
+    () => selectedHistories(simulation.histories, diagramParams, showAllCars),
+    [diagramParams, showAllCars, simulation.histories],
+  )
+  const maxPhaseSpeed = useMemo(
+    () => Math.max(1, ...phaseHistories.flatMap(({ samples }) => samples.map((sample) => sample.v))),
+    [phaseHistories],
+  )
   const graphWidth = 1100
   const graphHeight = 720
 
@@ -400,6 +454,14 @@ function App() {
               </button>
               <button className={phaseMode === '3d' ? 'active' : ''} type="button" onClick={() => setPhaseMode('3d')}>
                 3D
+              </button>
+            </div>
+            <div className="segmented compact" aria-label="Car selection">
+              <button className={showAllCars ? 'active' : ''} type="button" onClick={() => setShowAllCars(true)}>
+                All
+              </button>
+              <button className={!showAllCars ? 'active' : ''} type="button" onClick={() => setShowAllCars(false)}>
+                Pick
               </button>
             </div>
           </div>
@@ -474,7 +536,7 @@ function App() {
                   )}
                 </>
               )}
-              {simulation.histories.map((samples, index) => {
+              {(viewMode === 'road' ? simulation.histories.map((samples, index) => ({ samples, index })) : phaseHistories).map(({ samples, index }) => {
                 const paths =
                   viewMode === 'road'
                     ? buildPaths(samples, graphWidth, graphHeight, params.roadLength, params.duration)
@@ -482,10 +544,9 @@ function App() {
                         samples,
                         graphWidth,
                         graphHeight,
-                        params.roadLength,
-                        params.duration,
                         diagramParams,
                         phaseMode,
+                        maxPhaseSpeed,
                       )
 
                 return paths.map((path, segment) => (
