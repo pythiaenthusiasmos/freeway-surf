@@ -45,7 +45,7 @@ type Simulation = {
   steps: number
 }
 
-type ViewMode = 'road' | 'phase' | 'speedTime' | 'speedPosition'
+type ViewMode = 'road' | 'phase' | 'speedTime' | 'speedPosition' | 'track3d'
 type PhaseMode = '2d' | '3d'
 
 type DiagramParams = {
@@ -439,6 +439,215 @@ function buildThreePhasePoints(samples: Sample[], diagram: DiagramParams, maxSpe
   return points
 }
 
+function sampleAtTime(samples: Sample[], time: number, roadLength: number) {
+  if (samples.length < 2) {
+    return samples[0] ?? { t: 0, x: 0, v: 0 }
+  }
+
+  const sampleDt = samples[1].t - samples[0].t || 1
+  const lowerIndex = clamp(Math.floor(time / sampleDt), 0, samples.length - 2)
+  const upperIndex = lowerIndex + 1
+  const lower = samples[lowerIndex]
+  const upper = samples[upperIndex]
+  const amount = clamp((time - lower.t) / Math.max(upper.t - lower.t, 0.0001), 0, 1)
+  let upperX = upper.x
+
+  if (upperX - lower.x > roadLength * 0.5) {
+    upperX -= roadLength
+  } else if (lower.x - upperX > roadLength * 0.5) {
+    upperX += roadLength
+  }
+
+  return {
+    t: time,
+    x: wrap(lower.x + (upperX - lower.x) * amount, roadLength),
+    v: lower.v + (upper.v - lower.v) * amount,
+  }
+}
+
+function createCarModel(index: number) {
+  const car = new THREE.Group()
+  const hue = ((index * 31) % 360) / 360
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(hue, 0.72, 0.44),
+    roughness: 0.48,
+    metalness: 0.08,
+  })
+  const cabinMaterial = new THREE.MeshStandardMaterial({ color: 0xdde9ee, roughness: 0.28, metalness: 0.05 })
+  const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x20282d, roughness: 0.7 })
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.08, 0.34), bodyMaterial)
+  body.position.y = 0.08
+  body.castShadow = true
+  car.add(body)
+
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.16), cabinMaterial)
+  cabin.position.set(0, 0.145, -0.02)
+  cabin.castShadow = true
+  car.add(cabin)
+
+  const wheelGeometry = new THREE.BoxGeometry(0.045, 0.055, 0.07)
+  const wheelPositions = [
+    [-0.1, 0.04, -0.11],
+    [0.1, 0.04, -0.11],
+    [-0.1, 0.04, 0.11],
+    [0.1, 0.04, 0.11],
+  ]
+
+  wheelPositions.forEach(([x, y, z]) => {
+    const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial)
+    wheel.position.set(x, y, z)
+    car.add(wheel)
+  })
+
+  return car
+}
+
+function TrackScene({
+  histories,
+  roadLength,
+  duration,
+}: {
+  histories: Sample[][]
+  roadLength: number
+  duration: number
+}) {
+  const mountRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const mount = mountRef.current
+
+    if (!mount) {
+      return
+    }
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0xf6fbf8)
+
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100)
+    camera.position.set(0, 11.4, 11.2)
+    camera.lookAt(0, 0, 0)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.shadowMap.enabled = true
+    mount.appendChild(renderer.domElement)
+
+    const controls = new TrackballControls(camera, renderer.domElement)
+    controls.rotateSpeed = 2.3
+    controls.zoomSpeed = 0.9
+    controls.panSpeed = 0.45
+    controls.dynamicDampingFactor = 0.12
+
+    const ambient = new THREE.HemisphereLight(0xffffff, 0x94a19a, 1.9)
+    scene.add(ambient)
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.6)
+    keyLight.position.set(4, 9, 5)
+    keyLight.castShadow = true
+    scene.add(keyLight)
+
+    const track = new THREE.Group()
+    scene.add(track)
+
+    const road = new THREE.Mesh(
+      new THREE.RingGeometry(4.7, 6.25, 160),
+      new THREE.MeshStandardMaterial({ color: 0x3f4a50, roughness: 0.82 }),
+    )
+    road.rotation.x = -Math.PI / 2
+    road.receiveShadow = true
+    track.add(road)
+
+    const infield = new THREE.Mesh(
+      new THREE.CircleGeometry(4.35, 160),
+      new THREE.MeshStandardMaterial({ color: 0xd6ead6, roughness: 0.9 }),
+    )
+    infield.rotation.x = -Math.PI / 2
+    infield.position.y = -0.006
+    infield.receiveShadow = true
+    track.add(infield)
+
+    const dashMaterial = new THREE.MeshBasicMaterial({ color: 0xf8edba, transparent: true, opacity: 0.9 })
+    const dashGeometry = new THREE.BoxGeometry(0.045, 0.012, 0.42)
+    for (let index = 0; index < 56; index += 1) {
+      const angle = (index / 56) * Math.PI * 2
+      const dash = new THREE.Mesh(dashGeometry, dashMaterial)
+      dash.position.set(Math.cos(angle) * 5.48, 0.012, Math.sin(angle) * 5.48)
+      dash.rotation.y = -angle
+      track.add(dash)
+    }
+
+    const cars = histories.map((_, index) => {
+      const car = createCarModel(index)
+      track.add(car)
+      return car
+    })
+
+    const resize = () => {
+      const { clientWidth, clientHeight } = mount
+      const width = Math.max(clientWidth, 1)
+      const height = Math.max(clientHeight, 1)
+      renderer.setSize(width, height, false)
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+      controls.handleResize()
+    }
+
+    const resizeObserver = new ResizeObserver(resize)
+    resizeObserver.observe(mount)
+    resize()
+
+    const start = performance.now()
+    let animationFrame = 0
+    const animate = () => {
+      const elapsed = (performance.now() - start) / 1000
+      const simulationTime = (elapsed * 24) % duration
+
+      histories.forEach((samples, index) => {
+        const sample = sampleAtTime(samples, simulationTime, roadLength)
+        const angle = (sample.x / roadLength) * Math.PI * 2
+        const laneOffset = ((index % 5) - 2) * 0.045
+        const radius = 5.48 + laneOffset
+        const car = cars[index]
+
+        car.position.set(Math.cos(angle) * radius, 0.03, Math.sin(angle) * radius)
+        car.rotation.y = -angle
+        car.scale.setScalar(0.9 + clamp(sample.v / 45, 0, 1) * 0.22)
+      })
+
+      track.rotation.y += 0.0009
+      controls.update()
+      renderer.render(scene, camera)
+      animationFrame = requestAnimationFrame(animate)
+    }
+    animate()
+
+    return () => {
+      cancelAnimationFrame(animationFrame)
+      resizeObserver.disconnect()
+      controls.dispose()
+      scene.traverse((object) => {
+        if ('geometry' in object && object.geometry instanceof THREE.BufferGeometry) {
+          object.geometry.dispose()
+        }
+        if ('material' in object) {
+          const material = object.material
+
+          if (Array.isArray(material)) {
+            material.forEach((item) => item.dispose())
+          } else if (material instanceof THREE.Material) {
+            material.dispose()
+          }
+        }
+      })
+      renderer.dispose()
+      renderer.domElement.remove()
+    }
+  }, [duration, histories, roadLength])
+
+  return <div className="track-scene" ref={mountRef} aria-label="Animated 3D track view of the traffic simulation" />
+}
+
 function ThreePhaseScene({
   histories,
   diagram,
@@ -576,7 +785,9 @@ function App() {
         ? 'Car phase diagram'
         : viewMode === 'speedTime'
           ? 'Car speed over time'
-          : 'Car speed by road position'
+          : viewMode === 'speedPosition'
+            ? 'Car speed by road position'
+            : 'Animated 3D track view'
   const graphWidth = 1100
   const graphHeight = 720
 
@@ -600,7 +811,7 @@ function App() {
           <p>Single-lane traffic waves from tiny human-ish control errors.</p>
         </div>
         <div className="top-actions">
-          <div className="segmented" aria-label="Graph view">
+          <div className="segmented view-switcher" aria-label="Graph view">
             <button className={viewMode === 'road' ? 'active' : ''} type="button" onClick={() => setViewMode('road')}>
               Road
             </button>
@@ -620,6 +831,13 @@ function App() {
               onClick={() => setViewMode('speedPosition')}
             >
               Speed/position
+            </button>
+            <button
+              className={viewMode === 'track3d' ? 'active' : ''}
+              type="button"
+              onClick={() => setViewMode('track3d')}
+            >
+              Track 3D
             </button>
           </div>
           <button className="reset-button" type="button" onClick={() => setParams(defaultParams)}>
@@ -721,7 +939,9 @@ function App() {
           </div>
 
           <div className="graph-frame">
-            {viewMode === 'phase' && phaseMode === '3d' ? (
+            {viewMode === 'track3d' ? (
+              <TrackScene histories={simulation.histories} roadLength={params.roadLength} duration={params.duration} />
+            ) : viewMode === 'phase' && phaseMode === '3d' ? (
               <ThreePhaseScene histories={phaseHistories} diagram={diagramParams} maxSpeed={maxPhaseSpeed} />
             ) : (
               <svg
