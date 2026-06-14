@@ -8,6 +8,7 @@ type Params = {
   roadLength: number
   duration: number
   dt: number
+  vehicleLength: number
   baseSpeed: number
   speedVariance: number
   preferredGap: number
@@ -68,11 +69,15 @@ type HistoryEntry = {
   index: number
 }
 
+const trackRadius = 5.48
+const baseCarModelLength = 0.34
+
 const defaultParams: Params = {
   cars: 100,
   roadLength: 1800,
   duration: 300,
   dt: 0.35,
+  vehicleLength: 4.8,
   baseSpeed: 30,
   speedVariance: 0.49,
   preferredGap: 37,
@@ -113,6 +118,7 @@ const controls: Array<{
   { key: 'cars', label: 'Cars', min: 10, max: 180, step: 1 },
   { key: 'roadLength', label: 'Lane length', min: 600, max: 3600, step: 100, suffix: ' m' },
   { key: 'duration', label: 'Run time', min: 40, max: 360, step: 10, suffix: ' s' },
+  { key: 'vehicleLength', label: 'Vehicle length', min: 3, max: 18, step: 0.2, suffix: ' m' },
   { key: 'baseSpeed', label: 'Preferred speed', min: 8, max: 44, step: 1, suffix: ' m/s' },
   { key: 'speedVariance', label: 'Speed variance', min: 0, max: 0.6, step: 0.01 },
   { key: 'preferredGap', label: 'Following distance', min: 6, max: 60, step: 1, suffix: ' m' },
@@ -170,23 +176,35 @@ function wrap(position: number, roadLength: number) {
   return ((position % roadLength) + roadLength) % roadLength
 }
 
+function leaderFrontPosition(followerPosition: number, leaderPosition: number, roadLength: number) {
+  return leaderPosition <= followerPosition ? leaderPosition + roadLength : leaderPosition
+}
+
+function clearGapToLeader(followerPosition: number, leaderPosition: number, roadLength: number, vehicleLength: number) {
+  return leaderFrontPosition(followerPosition, leaderPosition, roadLength) - followerPosition - vehicleLength
+}
+
 function runSimulation(params: Params): Simulation {
   const rand = mulberry32(params.seed)
-  const carLength = 4.8
+  const vehicleLength = params.vehicleLength
   const standstillGap = 1.5
   const reactionTime = 0.9
-  const carCount = Math.min(params.cars, Math.floor(params.roadLength / (carLength + standstillGap)))
+  const carCount = Math.min(params.cars, Math.floor(params.roadLength / (vehicleLength + standstillGap)))
   const spacing = params.roadLength / carCount
+  const placementJitter = Math.max(0, spacing - vehicleLength - standstillGap) * 0.4
   const cars: Car[] = Array.from({ length: carCount }, (_, id) => ({
     id,
-    position: id * spacing + (rand() - 0.5) * spacing * 0.2,
+    position: id * spacing + (rand() - 0.5) * placementJitter,
     speed: vary(params.baseSpeed, params.speedVariance * 0.4, rand),
     preferredSpeed: vary(params.baseSpeed, params.speedVariance, rand),
     preferredGap: vary(params.preferredGap, params.gapVariance, rand),
   })).sort((a, b) => a.position - b.position)
 
   const steps = Math.max(2, Math.floor(params.duration / params.dt))
-  const histories: Sample[][] = cars.map((car) => [{ t: 0, x: wrap(car.position, params.roadLength), v: car.speed }])
+  const histories: Sample[][] = Array.from({ length: carCount })
+  cars.forEach((car) => {
+    histories[car.id] = [{ t: 0, x: wrap(car.position, params.roadLength), v: car.speed }]
+  })
   let minimumGap = params.roadLength
   let averageSpeedTotal = 0
 
@@ -196,8 +214,8 @@ function runSimulation(params: Params): Simulation {
 
     ordered.forEach((car, index) => {
       const leader = ordered[(index + 1) % ordered.length]
-      const leaderPosition = leader.position <= car.position ? leader.position + params.roadLength : leader.position
-      const gap = Math.max(0.2, leaderPosition - car.position - carLength)
+      const gap = clearGapToLeader(car.position, leader.position, params.roadLength, vehicleLength)
+      const forceGap = Math.max(0.2, gap)
       minimumGap = Math.min(minimumGap, gap)
 
       const closingSpeed = Math.max(0, car.speed - leader.speed)
@@ -206,7 +224,7 @@ function runSimulation(params: Params): Simulation {
         car.speed * reactionTime +
         (car.speed * closingSpeed) / (2 * Math.sqrt(params.accelLimit * params.brakeLimit))
       const speedPull = (car.preferredSpeed - car.speed) * params.speedGain
-      const stringPull = (gap - dynamicGap) * params.followGain
+      const stringPull = (forceGap - dynamicGap) * params.followGain
       const damping = (leader.speed - car.speed) * params.dampingGain
       let acceleration = speedPull + stringPull + damping
 
@@ -221,8 +239,8 @@ function runSimulation(params: Params): Simulation {
       const followerStopping = (car.speed * car.speed) / (2 * params.brakeLimit)
       const requiredGap = standstillGap + car.speed * params.dt + Math.max(0, followerStopping - leaderStopping)
 
-      if (gap < requiredGap) {
-        const urgency = clamp((requiredGap - gap) / Math.max(requiredGap, 1), 0, 1)
+      if (forceGap < requiredGap) {
+        const urgency = clamp((requiredGap - forceGap) / Math.max(requiredGap, 1), 0, 1)
         acceleration = Math.min(acceleration, -params.brakeLimit * urgency)
       }
 
@@ -234,10 +252,10 @@ function runSimulation(params: Params): Simulation {
     for (let pass = 0; pass < carCount; pass += 1) {
       ordered.forEach((car, index) => {
         const leader = ordered[(index + 1) % ordered.length]
-        const leaderPosition = leader.position <= car.position ? leader.position + params.roadLength : leader.position
+        const leaderPosition = leaderFrontPosition(car.position, leader.position, params.roadLength)
         const leaderSpeed = safeSpeeds.get(leader.id) ?? leader.speed
         const projectedLeaderPosition = leaderPosition + leaderSpeed * params.dt
-        const safeTravel = projectedLeaderPosition - car.position - carLength - standstillGap
+        const safeTravel = projectedLeaderPosition - car.position - vehicleLength - standstillGap
         const safeSpeed = Math.max(0, safeTravel / params.dt)
         const currentSpeed = safeSpeeds.get(car.id) ?? car.speed
 
@@ -257,8 +275,7 @@ function runSimulation(params: Params): Simulation {
     const afterUpdate = [...cars].sort((a, b) => a.position - b.position)
     afterUpdate.forEach((car, index) => {
       const leader = afterUpdate[(index + 1) % afterUpdate.length]
-      const leaderPosition = leader.position <= car.position ? leader.position + params.roadLength : leader.position
-      minimumGap = Math.min(minimumGap, Math.max(0, leaderPosition - car.position - carLength))
+      minimumGap = Math.min(minimumGap, clearGapToLeader(car.position, leader.position, params.roadLength, vehicleLength))
     })
   }
 
@@ -507,10 +524,12 @@ function TrackScene({
   histories,
   roadLength,
   duration,
+  vehicleLength,
 }: {
   histories: Sample[][]
   roadLength: number
   duration: number
+  vehicleLength: number
 }) {
   const mountRef = useRef<HTMLDivElement | null>(null)
 
@@ -579,6 +598,8 @@ function TrackScene({
 
     const cars = histories.map((_, index) => {
       const car = createCarModel(index)
+      const visibleLength = (vehicleLength / roadLength) * Math.PI * 2 * trackRadius
+      car.scale.setScalar(clamp(visibleLength / baseCarModelLength, 0.42, 1.15))
       track.add(car)
       return car
     })
@@ -612,7 +633,6 @@ function TrackScene({
 
         car.position.set(Math.cos(angle) * radius, 0.03, Math.sin(angle) * radius)
         car.rotation.y = -angle
-        car.scale.setScalar(0.9 + clamp(sample.v / 45, 0, 1) * 0.22)
       })
 
       track.rotation.y += 0.0009
@@ -643,7 +663,7 @@ function TrackScene({
       renderer.dispose()
       renderer.domElement.remove()
     }
-  }, [duration, histories, roadLength])
+  }, [duration, histories, roadLength, vehicleLength])
 
   return <div className="track-scene" ref={mountRef} aria-label="Animated 3D track view of the traffic simulation" />
 }
@@ -940,7 +960,12 @@ function App() {
 
           <div className="graph-frame">
             {viewMode === 'track3d' ? (
-              <TrackScene histories={simulation.histories} roadLength={params.roadLength} duration={params.duration} />
+              <TrackScene
+                histories={simulation.histories}
+                roadLength={params.roadLength}
+                duration={params.duration}
+                vehicleLength={params.vehicleLength}
+              />
             ) : viewMode === 'phase' && phaseMode === '3d' ? (
               <ThreePhaseScene histories={phaseHistories} diagram={diagramParams} maxSpeed={maxPhaseSpeed} />
             ) : (
