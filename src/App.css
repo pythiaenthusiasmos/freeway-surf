@@ -44,6 +44,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: end;
 }
 
 .segmented {
@@ -60,7 +62,7 @@
   border-right: 1px solid var(--line-strong);
   background: transparent;
   color: var(--muted);
-  min-width: 70px;
+  min-width: 68px;
   padding: 10px 12px;
   cursor: pointer;
 }
@@ -256,7 +258,7 @@
   vector-effect: non-scaling-stroke;
 }
 
-.phase-trace {
+.analysis-trace {
   opacity: 0.48;
 }
 
@@ -270,6 +272,10 @@
   stroke-dasharray: 8 7;
 }
 
+.corner-axis {
+  stroke: rgba(24, 36, 43, 0.42);
+}
+
 @media (max-width: 860px) {
   .topbar {
     align-items: start;
@@ -279,6 +285,10 @@
   .top-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .top-actions .segmented {
+    width: 100%;
   }
 
   .topbar h1 {

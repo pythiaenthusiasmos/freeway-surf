@@ -45,7 +45,7 @@ type Simulation = {
   steps: number
 }
 
-type ViewMode = 'road' | 'phase'
+type ViewMode = 'road' | 'phase' | 'speedTime' | 'speedPosition'
 type PhaseMode = '2d' | '3d'
 
 type DiagramParams = {
@@ -299,6 +299,45 @@ function buildPaths(samples: Sample[], width: number, height: number, roadLength
   return paths
 }
 
+function buildSpeedTimePath(samples: Sample[], width: number, height: number, duration: number, maxSpeed: number) {
+  let path = ''
+
+  samples.forEach((sample) => {
+    const x = (sample.t / duration) * width
+    const y = height - (sample.v / maxSpeed) * height
+    path += `${path ? ' L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`
+  })
+
+  return path ? [path] : []
+}
+
+function buildSpeedPositionPaths(samples: Sample[], width: number, height: number, roadLength: number, maxSpeed: number) {
+  const paths: string[] = []
+  let current = ''
+  let previousX = samples[0]?.x ?? 0
+
+  samples.forEach((sample, index) => {
+    const x = (sample.x / roadLength) * width
+    const y = height - (sample.v / maxSpeed) * height
+    const jump = index > 0 && Math.abs(sample.x - previousX) > roadLength * 0.55
+
+    if (jump && current) {
+      paths.push(current)
+      current = `M ${x.toFixed(2)} ${y.toFixed(2)}`
+    } else {
+      current += `${current ? ' L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`
+    }
+
+    previousX = sample.x
+  })
+
+  if (current) {
+    paths.push(current)
+  }
+
+  return paths
+}
+
 function buildPhasePaths(
   samples: Sample[],
   width: number,
@@ -529,6 +568,15 @@ function App() {
     () => Math.max(1, ...phaseHistories.flatMap(({ samples }) => samples.map((sample) => sample.v))),
     [phaseHistories],
   )
+  const selectedGraphHistories = viewMode === 'road' ? simulation.histories.map((samples, index) => ({ samples, index })) : phaseHistories
+  const graphLabel =
+    viewMode === 'road'
+      ? 'Car position over time'
+      : viewMode === 'phase'
+        ? 'Car phase diagram'
+        : viewMode === 'speedTime'
+          ? 'Car speed over time'
+          : 'Car speed by road position'
   const graphWidth = 1100
   const graphHeight = 720
 
@@ -558,6 +606,20 @@ function App() {
             </button>
             <button className={viewMode === 'phase' ? 'active' : ''} type="button" onClick={() => setViewMode('phase')}>
               Phase
+            </button>
+            <button
+              className={viewMode === 'speedTime' ? 'active' : ''}
+              type="button"
+              onClick={() => setViewMode('speedTime')}
+            >
+              Speed/time
+            </button>
+            <button
+              className={viewMode === 'speedPosition' ? 'active' : ''}
+              type="button"
+              onClick={() => setViewMode('speedPosition')}
+            >
+              Speed/position
             </button>
           </div>
           <button className="reset-button" type="button" onClick={() => setParams(defaultParams)}>
@@ -666,7 +728,7 @@ function App() {
                 className="graph"
                 viewBox={`0 0 ${graphWidth} ${graphHeight}`}
                 role="img"
-                aria-label={viewMode === 'road' ? 'Car position over time' : 'Car phase diagram'}
+                aria-label={graphLabel}
                 preserveAspectRatio="none"
               >
                 <defs>
@@ -681,15 +743,32 @@ function App() {
                     <line className="axis-line" x1={graphWidth / 2} y1={graphHeight * 0.08} x2={graphWidth / 2} y2={graphHeight * 0.92} />
                   </>
                 )}
-                {(viewMode === 'road' ? simulation.histories.map((samples, index) => ({ samples, index })) : phaseHistories).map(({ samples, index }) => {
-                  const paths =
-                    viewMode === 'road'
-                      ? buildPaths(samples, graphWidth, graphHeight, params.roadLength, params.duration)
-                      : buildPhasePaths(samples, graphWidth, graphHeight, diagramParams, phaseMode, maxPhaseSpeed)
+                {(viewMode === 'speedTime' || viewMode === 'speedPosition') && (
+                  <>
+                    <line className="axis-line corner-axis" x1={0} y1={graphHeight} x2={graphWidth} y2={graphHeight} />
+                    <line className="axis-line corner-axis" x1={0} y1={0} x2={0} y2={graphHeight} />
+                  </>
+                )}
+                {selectedGraphHistories.map(({ samples, index }) => {
+                  const paths = (() => {
+                    if (viewMode === 'road') {
+                      return buildPaths(samples, graphWidth, graphHeight, params.roadLength, params.duration)
+                    }
+
+                    if (viewMode === 'phase') {
+                      return buildPhasePaths(samples, graphWidth, graphHeight, diagramParams, phaseMode, maxPhaseSpeed)
+                    }
+
+                    if (viewMode === 'speedTime') {
+                      return buildSpeedTimePath(samples, graphWidth, graphHeight, params.duration, maxPhaseSpeed)
+                    }
+
+                    return buildSpeedPositionPaths(samples, graphWidth, graphHeight, params.roadLength, maxPhaseSpeed)
+                  })()
 
                   return paths.map((path, segment) => (
                     <path
-                      className={viewMode === 'road' ? 'trace' : 'trace phase-trace'}
+                      className={viewMode === 'road' ? 'trace' : 'trace analysis-trace'}
                       d={path}
                       key={`${index}-${segment}`}
                       style={{
