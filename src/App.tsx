@@ -38,6 +38,7 @@ type Simulation = {
   finalCars: Car[]
   averageSpeed: number
   minimumGap: number
+  carCount: number
   steps: number
 }
 
@@ -108,8 +109,12 @@ function wrap(position: number, roadLength: number) {
 
 function runSimulation(params: Params): Simulation {
   const rand = mulberry32(params.seed)
-  const spacing = params.roadLength / params.cars
-  const cars: Car[] = Array.from({ length: params.cars }, (_, id) => ({
+  const carLength = 4.8
+  const standstillGap = 1.5
+  const reactionTime = 0.9
+  const carCount = Math.min(params.cars, Math.floor(params.roadLength / (carLength + standstillGap)))
+  const spacing = params.roadLength / carCount
+  const cars: Car[] = Array.from({ length: carCount }, (_, id) => ({
     id,
     position: id * spacing + (rand() - 0.5) * spacing * 0.2,
     speed: vary(params.baseSpeed, params.speedVariance * 0.4, rand),
@@ -124,16 +129,21 @@ function runSimulation(params: Params): Simulation {
 
   for (let step = 1; step <= steps; step += 1) {
     const ordered = [...cars].sort((a, b) => a.position - b.position)
-    const accelerations = new Map<number, number>()
+    const proposedSpeeds = new Map<number, number>()
 
     ordered.forEach((car, index) => {
       const leader = ordered[(index + 1) % ordered.length]
       const leaderPosition = leader.position <= car.position ? leader.position + params.roadLength : leader.position
-      const gap = Math.max(0.5, leaderPosition - car.position - 4.8)
+      const gap = Math.max(0.2, leaderPosition - car.position - carLength)
       minimumGap = Math.min(minimumGap, gap)
 
+      const closingSpeed = Math.max(0, car.speed - leader.speed)
+      const dynamicGap =
+        car.preferredGap +
+        car.speed * reactionTime +
+        (car.speed * closingSpeed) / (2 * Math.sqrt(params.accelLimit * params.brakeLimit))
       const speedPull = (car.preferredSpeed - car.speed) * params.speedGain
-      const stringPull = (gap - car.preferredGap) * params.followGain
+      const stringPull = (gap - dynamicGap) * params.followGain
       const damping = (leader.speed - car.speed) * params.dampingGain
       let acceleration = speedPull + stringPull + damping
 
@@ -144,23 +154,57 @@ function runSimulation(params: Params): Simulation {
       }
 
       acceleration *= 1 + (rand() * 2 - 1) * params.accelError
-      accelerations.set(car.id, clamp(acceleration, -params.brakeLimit, params.accelLimit))
+      const leaderStopping = (leader.speed * leader.speed) / (2 * params.brakeLimit)
+      const followerStopping = (car.speed * car.speed) / (2 * params.brakeLimit)
+      const requiredGap = standstillGap + car.speed * params.dt + Math.max(0, followerStopping - leaderStopping)
+
+      if (gap < requiredGap) {
+        const urgency = clamp((requiredGap - gap) / Math.max(requiredGap, 1), 0, 1)
+        acceleration = Math.min(acceleration, -params.brakeLimit * urgency)
+      }
+
+      const clampedAcceleration = clamp(acceleration, -params.brakeLimit, params.accelLimit)
+      proposedSpeeds.set(car.id, Math.max(0, car.speed + clampedAcceleration * params.dt))
     })
 
+    const safeSpeeds = new Map(proposedSpeeds)
+    for (let pass = 0; pass < carCount; pass += 1) {
+      ordered.forEach((car, index) => {
+        const leader = ordered[(index + 1) % ordered.length]
+        const leaderPosition = leader.position <= car.position ? leader.position + params.roadLength : leader.position
+        const leaderSpeed = safeSpeeds.get(leader.id) ?? leader.speed
+        const projectedLeaderPosition = leaderPosition + leaderSpeed * params.dt
+        const safeTravel = projectedLeaderPosition - car.position - carLength - standstillGap
+        const safeSpeed = Math.max(0, safeTravel / params.dt)
+        const currentSpeed = safeSpeeds.get(car.id) ?? car.speed
+
+        if (currentSpeed > safeSpeed) {
+          safeSpeeds.set(car.id, safeSpeed)
+        }
+      })
+    }
+
     cars.forEach((car) => {
-      const acceleration = accelerations.get(car.id) ?? 0
-      car.speed = Math.max(0, car.speed + acceleration * params.dt)
+      car.speed = safeSpeeds.get(car.id) ?? car.speed
       car.position += car.speed * params.dt
       averageSpeedTotal += car.speed
       histories[car.id].push({ t: step * params.dt, x: wrap(car.position, params.roadLength) })
+    })
+
+    const afterUpdate = [...cars].sort((a, b) => a.position - b.position)
+    afterUpdate.forEach((car, index) => {
+      const leader = afterUpdate[(index + 1) % afterUpdate.length]
+      const leaderPosition = leader.position <= car.position ? leader.position + params.roadLength : leader.position
+      minimumGap = Math.min(minimumGap, Math.max(0, leaderPosition - car.position - carLength))
     })
   }
 
   return {
     histories,
     finalCars: [...cars].sort((a, b) => a.position - b.position),
-    averageSpeed: averageSpeedTotal / (params.cars * steps),
+    averageSpeed: averageSpeedTotal / (carCount * steps),
     minimumGap,
+    carCount,
     steps,
   }
 }
@@ -248,8 +292,8 @@ function App() {
               <strong>{simulation.minimumGap.toFixed(1)} m</strong>
             </div>
             <div>
-              <span>Steps</span>
-              <strong>{simulation.steps}</strong>
+              <span>Cars</span>
+              <strong>{simulation.carCount}</strong>
             </div>
           </div>
 
