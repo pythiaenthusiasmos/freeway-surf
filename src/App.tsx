@@ -42,6 +42,18 @@ type Simulation = {
   steps: number
 }
 
+type ViewMode = 'road' | 'phase'
+type PhaseMode = '2d' | '3d'
+
+type DiagramParams = {
+  lag: number
+  xScale: number
+  yScale: number
+  zScale: number
+  xSkew: number
+  ySkew: number
+}
+
 const defaultParams: Params = {
   cars: 100,
   roadLength: 1800,
@@ -59,6 +71,15 @@ const defaultParams: Params = {
   brakeLimit: 4.8,
   accelError: 0.08,
   seed: 42,
+}
+
+const defaultDiagramParams: DiagramParams = {
+  lag: 8,
+  xScale: 1,
+  yScale: 1,
+  zScale: 0.8,
+  xSkew: 0,
+  ySkew: 0,
 }
 
 const controls: Array<{
@@ -84,6 +105,22 @@ const controls: Array<{
   { key: 'brakeLimit', label: 'Brake limit', min: 1, max: 10, step: 0.1, suffix: ' m/s2' },
   { key: 'accelError', label: 'Control error', min: 0, max: 0.45, step: 0.01 },
   { key: 'seed', label: 'Seed', min: 1, max: 999, step: 1 },
+]
+
+const diagramControls: Array<{
+  key: keyof DiagramParams
+  label: string
+  min: number
+  max: number
+  step: number
+  suffix?: string
+}> = [
+  { key: 'lag', label: 'Past lag', min: 1, max: 60, step: 1, suffix: ' s' },
+  { key: 'xScale', label: 'X scale', min: 0.25, max: 2.5, step: 0.05 },
+  { key: 'yScale', label: 'Y scale', min: 0.25, max: 2.5, step: 0.05 },
+  { key: 'zScale', label: 'Time depth', min: 0, max: 2, step: 0.05 },
+  { key: 'xSkew', label: 'X skew', min: -1.5, max: 1.5, step: 0.05 },
+  { key: 'ySkew', label: 'Y skew', min: -1.5, max: 1.5, step: 0.05 },
 ]
 
 function mulberry32(seed: number) {
@@ -236,14 +273,76 @@ function buildPaths(samples: Sample[], width: number, height: number, roadLength
   return paths
 }
 
+function buildPhasePaths(
+  samples: Sample[],
+  width: number,
+  height: number,
+  roadLength: number,
+  duration: number,
+  diagram: DiagramParams,
+  mode: PhaseMode,
+) {
+  const paths: string[] = []
+  const sampleDt = samples[1] ? samples[1].t - samples[0].t : 1
+  const lagSteps = Math.max(1, Math.round(diagram.lag / sampleDt))
+  let current = ''
+  let previousNow = samples[lagSteps]?.x ?? 0
+  let previousPast = samples[0]?.x ?? 0
+
+  for (let index = lagSteps; index < samples.length; index += 1) {
+    const now = samples[index]
+    const past = samples[index - lagSteps]
+    const nowUnit = now.x / roadLength
+    const pastUnit = past.x / roadLength
+    const timeUnit = now.t / duration
+    const centeredNow = (nowUnit - 0.5) * diagram.xScale
+    const centeredPast = (pastUnit - 0.5) * diagram.yScale
+    const centeredTime = (timeUnit - 0.5) * diagram.zScale
+
+    let x = width / 2 + centeredNow * width * 0.82 + centeredPast * diagram.xSkew * width * 0.32
+    let y = height / 2 - centeredPast * height * 0.82 + centeredNow * diagram.ySkew * height * 0.32
+
+    if (mode === '3d') {
+      x += centeredTime * width * 0.34
+      y -= centeredTime * height * 0.28
+    }
+
+    const wraps =
+      Math.abs(now.x - previousNow) > roadLength * 0.55 || Math.abs(past.x - previousPast) > roadLength * 0.55
+
+    if (wraps && current) {
+      paths.push(current)
+      current = `M ${x.toFixed(2)} ${y.toFixed(2)}`
+    } else {
+      current += `${current ? ' L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`
+    }
+
+    previousNow = now.x
+    previousPast = past.x
+  }
+
+  if (current) {
+    paths.push(current)
+  }
+
+  return paths
+}
+
 function App() {
   const [params, setParams] = useState(defaultParams)
+  const [diagramParams, setDiagramParams] = useState(defaultDiagramParams)
+  const [viewMode, setViewMode] = useState<ViewMode>('road')
+  const [phaseMode, setPhaseMode] = useState<PhaseMode>('2d')
   const simulation = useMemo(() => runSimulation(params), [params])
   const graphWidth = 1100
   const graphHeight = 720
 
   const updateParam = (key: keyof Params, value: number) => {
     setParams((current) => ({ ...current, [key]: value }))
+  }
+
+  const updateDiagramParam = (key: keyof DiagramParams, value: number) => {
+    setDiagramParams((current) => ({ ...current, [key]: value }))
   }
 
   return (
@@ -253,13 +352,26 @@ function App() {
           <h1>Freeway SURF</h1>
           <p>Single-lane traffic waves from tiny human-ish control errors.</p>
         </div>
-        <button className="reset-button" type="button" onClick={() => setParams(defaultParams)}>
-          Reset
-        </button>
+        <div className="top-actions">
+          <div className="segmented" aria-label="Graph view">
+            <button className={viewMode === 'road' ? 'active' : ''} type="button" onClick={() => setViewMode('road')}>
+              Road
+            </button>
+            <button className={viewMode === 'phase' ? 'active' : ''} type="button" onClick={() => setViewMode('phase')}>
+              Phase
+            </button>
+          </div>
+          <button className="reset-button" type="button" onClick={() => setParams(defaultParams)}>
+            Reset
+          </button>
+        </div>
       </header>
 
       <section className="workspace" aria-label="Freeway simulator">
         <aside className="controls" aria-label="Simulation parameters">
+          <div className="control-group">
+            <div className="group-title">Simulation</div>
+          </div>
           {controls.map((control) => (
             <label className="control" key={control.key}>
               <span>
@@ -276,6 +388,37 @@ function App() {
                 step={control.step}
                 value={params[control.key]}
                 onChange={(event) => updateParam(control.key, Number(event.target.value))}
+              />
+            </label>
+          ))}
+
+          <div className="control-group">
+            <div className="group-title">Phase</div>
+            <div className="segmented compact" aria-label="Phase dimensions">
+              <button className={phaseMode === '2d' ? 'active' : ''} type="button" onClick={() => setPhaseMode('2d')}>
+                2D
+              </button>
+              <button className={phaseMode === '3d' ? 'active' : ''} type="button" onClick={() => setPhaseMode('3d')}>
+                3D
+              </button>
+            </div>
+          </div>
+          {diagramControls.map((control) => (
+            <label className="control" key={control.key}>
+              <span>
+                {control.label}
+                <strong>
+                  {Number(diagramParams[control.key]).toFixed(control.step < 1 ? 2 : 0)}
+                  {control.suffix ?? ''}
+                </strong>
+              </span>
+              <input
+                type="range"
+                min={control.min}
+                max={control.max}
+                step={control.step}
+                value={diagramParams[control.key]}
+                onChange={(event) => updateDiagramParam(control.key, Number(event.target.value))}
               />
             </label>
           ))}
@@ -313,7 +456,7 @@ function App() {
               className="graph"
               viewBox={`0 0 ${graphWidth} ${graphHeight}`}
               role="img"
-              aria-label="Car position over time"
+              aria-label={viewMode === 'road' ? 'Car position over time' : 'Car phase diagram'}
               preserveAspectRatio="none"
             >
               <defs>
@@ -322,18 +465,40 @@ function App() {
                 </pattern>
               </defs>
               <rect width={graphWidth} height={graphHeight} fill="url(#grid)" />
-              {simulation.histories.map((samples, index) =>
-                buildPaths(samples, graphWidth, graphHeight, params.roadLength, params.duration).map((path, segment) => (
+              {viewMode === 'phase' && (
+                <>
+                  <line className="axis-line" x1={graphWidth * 0.08} y1={graphHeight / 2} x2={graphWidth * 0.92} y2={graphHeight / 2} />
+                  <line className="axis-line" x1={graphWidth / 2} y1={graphHeight * 0.08} x2={graphWidth / 2} y2={graphHeight * 0.92} />
+                  {phaseMode === '3d' && (
+                    <line className="axis-line depth" x1={graphWidth * 0.33} y1={graphHeight * 0.72} x2={graphWidth * 0.67} y2={graphHeight * 0.28} />
+                  )}
+                </>
+              )}
+              {simulation.histories.map((samples, index) => {
+                const paths =
+                  viewMode === 'road'
+                    ? buildPaths(samples, graphWidth, graphHeight, params.roadLength, params.duration)
+                    : buildPhasePaths(
+                        samples,
+                        graphWidth,
+                        graphHeight,
+                        params.roadLength,
+                        params.duration,
+                        diagramParams,
+                        phaseMode,
+                      )
+
+                return paths.map((path, segment) => (
                   <path
-                    className="trace"
+                    className={viewMode === 'road' ? 'trace' : 'trace phase-trace'}
                     d={path}
                     key={`${index}-${segment}`}
                     style={{
                       stroke: `hsl(${(index * 31) % 360} 72% 42%)`,
                     }}
                   />
-                )),
-              )}
+                ))
+              })}
             </svg>
           </div>
         </section>

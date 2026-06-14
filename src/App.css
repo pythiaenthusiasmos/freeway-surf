@@ -40,6 +40,50 @@
   cursor: pointer;
 }
 
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.segmented {
+  display: inline-grid;
+  grid-auto-flow: column;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.segmented button {
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+  min-width: 70px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.segmented button:last-child {
+  border-right: 0;
+}
+
+.segmented button.active {
+  background: var(--accent);
+  color: white;
+}
+
+.segmented.compact {
+  width: 100%;
+}
+
+.segmented.compact button {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+}
+
 .reset-button:hover {
   border-color: var(--ink);
 }
@@ -54,10 +98,29 @@
 .controls {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: 12px;
   padding: 18px;
   border-right: 1px solid var(--line);
   background: rgba(247, 247, 242, 0.84);
+}
+
+.control-group {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.control-group:not(:first-child) {
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.group-title {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
 }
 
 .control {
@@ -175,10 +238,29 @@
   vector-effect: non-scaling-stroke;
 }
 
+.phase-trace {
+  opacity: 0.48;
+}
+
+.axis-line {
+  stroke: rgba(24, 36, 43, 0.34);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.axis-line.depth {
+  stroke-dasharray: 8 7;
+}
+
 @media (max-width: 860px) {
   .topbar {
     align-items: start;
     flex-direction: column;
+  }
+
+  .top-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .topbar h1 {
