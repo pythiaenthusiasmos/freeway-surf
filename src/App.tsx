@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import * as THREE from 'three'
+import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js'
 import './App.css'
 
 type Params = {
@@ -59,6 +61,11 @@ type DiagramParams = {
   startCar: number
   selectedCars: number
   carInterval: number
+}
+
+type HistoryEntry = {
+  samples: Sample[]
+  index: number
 }
 
 const defaultParams: Params = {
@@ -350,7 +357,7 @@ function buildPhasePaths(
   return paths
 }
 
-function selectedHistories(histories: Sample[][], diagram: DiagramParams, showAllCars: boolean) {
+function selectedHistories(histories: Sample[][], diagram: DiagramParams, showAllCars: boolean): HistoryEntry[] {
   if (showAllCars) {
     return histories.map((samples, index) => ({ samples, index }))
   }
@@ -358,7 +365,7 @@ function selectedHistories(histories: Sample[][], diagram: DiagramParams, showAl
   const startIndex = clamp(Math.round(diagram.startCar) - 1, 0, histories.length - 1)
   const interval = Math.max(1, Math.round(diagram.carInterval))
   const count = Math.max(1, Math.round(diagram.selectedCars))
-  const selected: Array<{ samples: Sample[]; index: number }> = []
+  const selected: HistoryEntry[] = []
 
   for (let offset = 0; offset < count; offset += 1) {
     const index = startIndex + offset * interval
@@ -371,6 +378,140 @@ function selectedHistories(histories: Sample[][], diagram: DiagramParams, showAl
   }
 
   return selected
+}
+
+function buildThreePhasePoints(samples: Sample[], diagram: DiagramParams, maxSpeed: number) {
+  const points: THREE.Vector3[] = []
+  const sampleDt = samples[1] ? samples[1].t - samples[0].t : 1
+  const delaySteps = Math.max(1, Math.round(diagram.delta / sampleDt))
+  const startIndex = delaySteps * 2
+
+  for (let index = startIndex; index < samples.length; index += 1) {
+    const now = samples[index]
+    const past = samples[index - delaySteps]
+    const older = samples[index - delaySteps * 2]
+    const x = (now.v / maxSpeed - 0.5) * 2 * diagram.xScale
+    const y = (past.v / maxSpeed - 0.5) * 2 * diagram.yScale
+    const z = (older.v / maxSpeed - 0.5) * 2 * diagram.zScale
+
+    points.push(new THREE.Vector3(x + y * diagram.xSkew * 0.35, y + x * diagram.ySkew * 0.35, z))
+  }
+
+  return points
+}
+
+function ThreePhaseScene({
+  histories,
+  diagram,
+  maxSpeed,
+}: {
+  histories: HistoryEntry[]
+  diagram: DiagramParams
+  maxSpeed: number
+}) {
+  const mountRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const mount = mountRef.current
+
+    if (!mount) {
+      return
+    }
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0xf6fbf8)
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
+    camera.position.set(0, 0, 5)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    mount.appendChild(renderer.domElement)
+
+    const controls = new TrackballControls(camera, renderer.domElement)
+    controls.rotateSpeed = 4
+    controls.zoomSpeed = 1.1
+    controls.panSpeed = 0.7
+    controls.staticMoving = false
+    controls.dynamicDampingFactor = 0.12
+
+    const group = new THREE.Group()
+    group.rotation.set(
+      (diagram.rotateX * Math.PI) / 180,
+      (diagram.rotateY * Math.PI) / 180,
+      (diagram.rotateZ * Math.PI) / 180,
+    )
+    scene.add(group)
+
+    const axisMaterial = new THREE.LineBasicMaterial({ color: 0x263238, transparent: true, opacity: 0.45 })
+    const axisGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-1.6, 0, 0),
+      new THREE.Vector3(1.6, 0, 0),
+      new THREE.Vector3(0, -1.6, 0),
+      new THREE.Vector3(0, 1.6, 0),
+      new THREE.Vector3(0, 0, -1.6),
+      new THREE.Vector3(0, 0, 1.6),
+    ])
+    group.add(new THREE.LineSegments(axisGeometry, axisMaterial))
+
+    histories.forEach(({ samples, index }) => {
+      const points = buildThreePhasePoints(samples, diagram, maxSpeed)
+
+      if (points.length < 2) {
+        return
+      }
+
+      const geometry = new THREE.BufferGeometry().setFromPoints(points)
+      const color = new THREE.Color().setHSL(((index * 31) % 360) / 360, 0.72, 0.42)
+      const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.68 })
+      group.add(new THREE.Line(geometry, material))
+    })
+
+    const resize = () => {
+      const { clientWidth, clientHeight } = mount
+      const width = Math.max(clientWidth, 1)
+      const height = Math.max(clientHeight, 1)
+      renderer.setSize(width, height, false)
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+      controls.handleResize()
+    }
+
+    const resizeObserver = new ResizeObserver(resize)
+    resizeObserver.observe(mount)
+    resize()
+
+    let animationFrame = 0
+    const animate = () => {
+      animationFrame = requestAnimationFrame(animate)
+      controls.update()
+      renderer.render(scene, camera)
+    }
+    animate()
+
+    return () => {
+      cancelAnimationFrame(animationFrame)
+      resizeObserver.disconnect()
+      controls.dispose()
+      scene.traverse((object) => {
+        if ('geometry' in object && object.geometry instanceof THREE.BufferGeometry) {
+          object.geometry.dispose()
+        }
+        if ('material' in object) {
+          const material = object.material
+
+          if (Array.isArray(material)) {
+            material.forEach((item) => item.dispose())
+          } else if (material instanceof THREE.Material) {
+            material.dispose()
+          }
+        }
+      })
+      renderer.dispose()
+      renderer.domElement.remove()
+    }
+  }, [diagram, histories, maxSpeed])
+
+  return <div className="three-phase" ref={mountRef} aria-label="Rotatable 3D speed phase diagram" />
 }
 
 function App() {
@@ -514,53 +655,47 @@ function App() {
           </div>
 
           <div className="graph-frame">
-            <svg
-              className="graph"
-              viewBox={`0 0 ${graphWidth} ${graphHeight}`}
-              role="img"
-              aria-label={viewMode === 'road' ? 'Car position over time' : 'Car phase diagram'}
-              preserveAspectRatio="none"
-            >
-              <defs>
-                <pattern id="grid" width="100" height="80" patternUnits="userSpaceOnUse">
-                  <path d="M 100 0 L 0 0 0 80" fill="none" stroke="rgba(28, 43, 52, 0.12)" strokeWidth="1" />
-                </pattern>
-              </defs>
-              <rect width={graphWidth} height={graphHeight} fill="url(#grid)" />
-              {viewMode === 'phase' && (
-                <>
-                  <line className="axis-line" x1={graphWidth * 0.08} y1={graphHeight / 2} x2={graphWidth * 0.92} y2={graphHeight / 2} />
-                  <line className="axis-line" x1={graphWidth / 2} y1={graphHeight * 0.08} x2={graphWidth / 2} y2={graphHeight * 0.92} />
-                  {phaseMode === '3d' && (
-                    <line className="axis-line depth" x1={graphWidth * 0.33} y1={graphHeight * 0.72} x2={graphWidth * 0.67} y2={graphHeight * 0.28} />
-                  )}
-                </>
-              )}
-              {(viewMode === 'road' ? simulation.histories.map((samples, index) => ({ samples, index })) : phaseHistories).map(({ samples, index }) => {
-                const paths =
-                  viewMode === 'road'
-                    ? buildPaths(samples, graphWidth, graphHeight, params.roadLength, params.duration)
-                    : buildPhasePaths(
-                        samples,
-                        graphWidth,
-                        graphHeight,
-                        diagramParams,
-                        phaseMode,
-                        maxPhaseSpeed,
-                      )
+            {viewMode === 'phase' && phaseMode === '3d' ? (
+              <ThreePhaseScene histories={phaseHistories} diagram={diagramParams} maxSpeed={maxPhaseSpeed} />
+            ) : (
+              <svg
+                className="graph"
+                viewBox={`0 0 ${graphWidth} ${graphHeight}`}
+                role="img"
+                aria-label={viewMode === 'road' ? 'Car position over time' : 'Car phase diagram'}
+                preserveAspectRatio="none"
+              >
+                <defs>
+                  <pattern id="grid" width="100" height="80" patternUnits="userSpaceOnUse">
+                    <path d="M 100 0 L 0 0 0 80" fill="none" stroke="rgba(28, 43, 52, 0.12)" strokeWidth="1" />
+                  </pattern>
+                </defs>
+                <rect width={graphWidth} height={graphHeight} fill="url(#grid)" />
+                {viewMode === 'phase' && (
+                  <>
+                    <line className="axis-line" x1={graphWidth * 0.08} y1={graphHeight / 2} x2={graphWidth * 0.92} y2={graphHeight / 2} />
+                    <line className="axis-line" x1={graphWidth / 2} y1={graphHeight * 0.08} x2={graphWidth / 2} y2={graphHeight * 0.92} />
+                  </>
+                )}
+                {(viewMode === 'road' ? simulation.histories.map((samples, index) => ({ samples, index })) : phaseHistories).map(({ samples, index }) => {
+                  const paths =
+                    viewMode === 'road'
+                      ? buildPaths(samples, graphWidth, graphHeight, params.roadLength, params.duration)
+                      : buildPhasePaths(samples, graphWidth, graphHeight, diagramParams, phaseMode, maxPhaseSpeed)
 
-                return paths.map((path, segment) => (
-                  <path
-                    className={viewMode === 'road' ? 'trace' : 'trace phase-trace'}
-                    d={path}
-                    key={`${index}-${segment}`}
-                    style={{
-                      stroke: `hsl(${(index * 31) % 360} 72% 42%)`,
-                    }}
-                  />
-                ))
-              })}
-            </svg>
+                  return paths.map((path, segment) => (
+                    <path
+                      className={viewMode === 'road' ? 'trace' : 'trace phase-trace'}
+                      d={path}
+                      key={`${index}-${segment}`}
+                      style={{
+                        stroke: `hsl(${(index * 31) % 360} 72% 42%)`,
+                      }}
+                    />
+                  ))
+                })}
+              </svg>
+            )}
           </div>
         </section>
       </section>

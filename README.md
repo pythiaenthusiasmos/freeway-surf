@@ -10,6 +10,8 @@ The phase view plots speed delay coordinates: `v(t)` against `v(t - delta)`, wit
 
 The phase view can show all cars or a selected sequence by starting car, count, and interval.
 
+The 3D phase view uses Three.js TrackballControls, so dragging across the display rotates the scene directly.
+
 ## Run
 
 ```sh
