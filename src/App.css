@@ -28,36 +28,6 @@
   border-color: var(--sim-ui-ink);
 }
 
-.lane-strip {
-  position: relative;
-  height: 32px;
-  margin-top: 8px;
-  border: 1px solid var(--sim-ui-line-strong);
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, #5d6870, #2d363c),
-    repeating-linear-gradient(90deg, transparent 0 46px, rgba(255, 255, 255, 0.16) 46px 70px);
-  overflow: hidden;
-}
-
-.lane-strip::before {
-  content: '';
-  position: absolute;
-  inset: 15px 0 auto;
-  border-top: 2px dashed rgba(255, 248, 214, 0.75);
-}
-
-.car-dot {
-  position: absolute;
-  top: 7px;
-  width: 5px;
-  height: 18px;
-  transform: translateX(-50%);
-  border-radius: 3px;
-  background: #ffd166;
-  box-shadow: 0 0 0 1px rgba(42, 33, 16, 0.35);
-}
-
 .graph-frame {
   width: 100%;
   height: 100%;

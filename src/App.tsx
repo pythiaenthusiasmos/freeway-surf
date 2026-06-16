@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js'
-import { AppFrame, ControlGroup, NumericControl, SegmentedControl, StatGrid, StatItem } from '@openclaw/sim-ui'
+import { AppFrame, ControlGroup, NumericControl, SegmentedControl } from '@openclaw/sim-ui'
 import './App.css'
 
 type Params = {
@@ -881,25 +881,6 @@ function App() {
               <NumericControl item={control} key={control.key} values={diagramParams} onChange={updateDiagramParam} />
             ))}
           </ControlGroup>
-        </>
-      }
-      stats={
-        <>
-          <StatGrid>
-            <StatItem label="Average speed" value={`${simulation.averageSpeed.toFixed(1)} m/s`} />
-            <StatItem label="Minimum gap" value={`${simulation.minimumGap.toFixed(1)} m`} />
-            <StatItem label="Cars" value={simulation.carCount} />
-          </StatGrid>
-          <div className="lane-strip" aria-label="Final car positions">
-            {simulation.finalCars.map((car) => (
-              <span
-                className="car-dot"
-                key={car.id}
-                style={{ left: `${(wrap(car.position, params.roadLength) / params.roadLength) * 100}%` }}
-                title={`Car ${car.id + 1}: ${car.speed.toFixed(1)} m/s`}
-              />
-            ))}
-          </div>
         </>
       }
       viewport={
