@@ -831,7 +831,6 @@ function App() {
     <AppFrame
       className="freeway-app"
       title="Freeway SURF"
-      subtitle="Single-lane traffic waves from tiny human-ish control errors."
       viewportLabel="Freeway simulator"
       actions={
         <>
