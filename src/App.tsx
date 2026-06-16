@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js'
+import { AppFrame, ControlGroup, NumericControl, SegmentedControl, StatGrid, StatItem } from '@openclaw/sim-ui'
 import './App.css'
 
 type Params = {
@@ -827,129 +828,69 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <h1>Freeway SURF</h1>
-          <p>Single-lane traffic waves from tiny human-ish control errors.</p>
-        </div>
-        <div className="top-actions">
-          <div className="segmented view-switcher" aria-label="Graph view">
-            <button className={viewMode === 'road' ? 'active' : ''} type="button" onClick={() => setViewMode('road')}>
-              Road
-            </button>
-            <button className={viewMode === 'phase' ? 'active' : ''} type="button" onClick={() => setViewMode('phase')}>
-              Phase
-            </button>
-            <button
-              className={viewMode === 'speedTime' ? 'active' : ''}
-              type="button"
-              onClick={() => setViewMode('speedTime')}
-            >
-              Speed/time
-            </button>
-            <button
-              className={viewMode === 'speedPosition' ? 'active' : ''}
-              type="button"
-              onClick={() => setViewMode('speedPosition')}
-            >
-              Speed/position
-            </button>
-            <button
-              className={viewMode === 'track3d' ? 'active' : ''}
-              type="button"
-              onClick={() => setViewMode('track3d')}
-            >
-              Track 3D
-            </button>
-          </div>
+    <AppFrame
+      className="freeway-app"
+      title="Freeway SURF"
+      subtitle="Single-lane traffic waves from tiny human-ish control errors."
+      viewportLabel="Freeway simulator"
+      actions={
+        <>
+          <SegmentedControl
+            label="Graph view"
+            value={viewMode}
+            options={[
+              { value: 'road', label: 'Road' },
+              { value: 'phase', label: 'Phase' },
+              { value: 'speedTime', label: 'Speed/time' },
+              { value: 'speedPosition', label: 'Speed/position' },
+              { value: 'track3d', label: 'Track 3D' },
+            ]}
+            onChange={setViewMode}
+          />
           <button className="reset-button" type="button" onClick={() => setParams(defaultParams)}>
             Reset
           </button>
-        </div>
-      </header>
-
-      <section className="workspace" aria-label="Freeway simulator">
-        <aside className="controls" aria-label="Simulation parameters">
-          <div className="control-group">
-            <div className="group-title">Simulation</div>
-          </div>
-          {controls.map((control) => (
-            <label className="control" key={control.key}>
-              <span>
-                {control.label}
-                <strong>
-                  {Number(params[control.key]).toFixed(control.step < 1 ? 2 : 0)}
-                  {control.suffix ?? ''}
-                </strong>
-              </span>
-              <input
-                type="range"
-                min={control.min}
-                max={control.max}
-                step={control.step}
-                value={params[control.key]}
-                onChange={(event) => updateParam(control.key, Number(event.target.value))}
-              />
-            </label>
-          ))}
-
-          <div className="control-group">
-            <div className="group-title">Phase</div>
-            <div className="segmented compact" aria-label="Phase dimensions">
-              <button className={phaseMode === '2d' ? 'active' : ''} type="button" onClick={() => setPhaseMode('2d')}>
-                2D
-              </button>
-              <button className={phaseMode === '3d' ? 'active' : ''} type="button" onClick={() => setPhaseMode('3d')}>
-                3D
-              </button>
-            </div>
-            <div className="segmented compact" aria-label="Car selection">
-              <button className={showAllCars ? 'active' : ''} type="button" onClick={() => setShowAllCars(true)}>
-                All
-              </button>
-              <button className={!showAllCars ? 'active' : ''} type="button" onClick={() => setShowAllCars(false)}>
-                Pick
-              </button>
-            </div>
-          </div>
-          {diagramControls.map((control) => (
-            <label className="control" key={control.key}>
-              <span>
-                {control.label}
-                <strong>
-                  {Number(diagramParams[control.key]).toFixed(control.step < 1 ? 2 : 0)}
-                  {control.suffix ?? ''}
-                </strong>
-              </span>
-              <input
-                type="range"
-                min={control.min}
-                max={control.max}
-                step={control.step}
-                value={diagramParams[control.key]}
-                onChange={(event) => updateDiagramParam(control.key, Number(event.target.value))}
-              />
-            </label>
-          ))}
-        </aside>
-
-        <section className="visuals">
-          <div className="stats" aria-label="Simulation stats">
-            <div>
-              <span>Average speed</span>
-              <strong>{simulation.averageSpeed.toFixed(1)} m/s</strong>
-            </div>
-            <div>
-              <span>Minimum gap</span>
-              <strong>{simulation.minimumGap.toFixed(1)} m</strong>
-            </div>
-            <div>
-              <span>Cars</span>
-              <strong>{simulation.carCount}</strong>
-            </div>
-          </div>
-
+        </>
+      }
+      controls={
+        <>
+          <ControlGroup title="Simulation">
+            {controls.map((control) => (
+              <NumericControl item={control} key={control.key} values={params} onChange={updateParam} />
+            ))}
+          </ControlGroup>
+          <ControlGroup title="Phase">
+            <SegmentedControl
+              label="Phase dimensions"
+              value={phaseMode}
+              options={[
+                { value: '2d', label: '2D' },
+                { value: '3d', label: '3D' },
+              ]}
+              onChange={setPhaseMode}
+            />
+            <SegmentedControl
+              label="Car selection"
+              value={showAllCars ? 'all' : 'pick'}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'pick', label: 'Pick' },
+              ]}
+              onChange={(value) => setShowAllCars(value === 'all')}
+            />
+            {diagramControls.map((control) => (
+              <NumericControl item={control} key={control.key} values={diagramParams} onChange={updateDiagramParam} />
+            ))}
+          </ControlGroup>
+        </>
+      }
+      stats={
+        <>
+          <StatGrid>
+            <StatItem label="Average speed" value={`${simulation.averageSpeed.toFixed(1)} m/s`} />
+            <StatItem label="Minimum gap" value={`${simulation.minimumGap.toFixed(1)} m`} />
+            <StatItem label="Cars" value={simulation.carCount} />
+          </StatGrid>
           <div className="lane-strip" aria-label="Final car positions">
             {simulation.finalCars.map((car) => (
               <span
@@ -960,8 +901,10 @@ function App() {
               />
             ))}
           </div>
-
-          <div className="graph-frame">
+        </>
+      }
+      viewport={
+        <div className="graph-frame">
             {viewMode === 'track3d' ? (
               <TrackScene
                 histories={simulation.histories}
@@ -1027,10 +970,9 @@ function App() {
                 })}
               </svg>
             )}
-          </div>
-        </section>
-      </section>
-    </main>
+        </div>
+      }
+    />
   )
 }
 

@@ -1,196 +1,38 @@
-.app-shell {
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  background:
+.freeway-app {
+  --sim-ui-bg:
     linear-gradient(90deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.62)),
     repeating-linear-gradient(90deg, transparent 0 44px, rgba(27, 43, 52, 0.045) 44px 45px);
-}
-
-.topbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 24px 28px 18px;
-  border-bottom: 1px solid var(--line);
-}
-
-.topbar h1 {
-  margin: 0;
-  font-size: 42px;
-  line-height: 1;
-  letter-spacing: 0;
-  color: var(--ink);
-}
-
-.topbar p {
-  margin: 8px 0 0;
-  color: var(--muted);
+  --sim-ui-panel: #fbfbf7;
+  --sim-ui-panel-soft: rgba(247, 247, 242, 0.86);
+  --sim-ui-ink: #18242b;
+  --sim-ui-muted: #5f6e73;
+  --sim-ui-line: #d8ddd5;
+  --sim-ui-line-strong: #aeb9b0;
+  --sim-ui-accent: #0f7f6f;
+  --sim-ui-accent-contrast: #ffffff;
 }
 
 .reset-button {
-  min-width: 86px;
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: var(--ink);
+  min-height: 36px;
+  min-width: 78px;
+  border: 1px solid var(--sim-ui-line-strong);
+  background: var(--sim-ui-panel);
+  color: var(--sim-ui-ink);
   border-radius: 6px;
-  padding: 10px 14px;
+  padding: 8px 13px;
   font: inherit;
   cursor: pointer;
 }
 
-.top-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: end;
-}
-
-.segmented {
-  display: inline-grid;
-  grid-auto-flow: column;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  overflow: hidden;
-  background: var(--panel);
-}
-
-.segmented button {
-  border: 0;
-  border-right: 1px solid var(--line-strong);
-  background: transparent;
-  color: var(--muted);
-  min-width: 68px;
-  padding: 10px 12px;
-  cursor: pointer;
-}
-
-.segmented button:last-child {
-  border-right: 0;
-}
-
-.segmented button.active {
-  background: var(--accent);
-  color: white;
-}
-
-.segmented.compact {
-  width: 100%;
-}
-
-.segmented.compact button {
-  min-width: 0;
-  width: 100%;
-  padding: 8px 10px;
-}
-
 .reset-button:hover {
-  border-color: var(--ink);
-}
-
-.workspace {
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  min-height: 0;
-}
-
-.controls {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  padding: 18px;
-  border-right: 1px solid var(--line);
-  background: rgba(247, 247, 242, 0.84);
-}
-
-.control-group {
-  display: grid;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.control-group:not(:first-child) {
-  margin-top: 6px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-
-.group-title {
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 750;
-  text-transform: uppercase;
-}
-
-.control {
-  display: grid;
-  gap: 8px;
-}
-
-.control span {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.control strong {
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.control input {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-.visuals {
-  min-width: 0;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 14px;
-  padding: 18px;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.stats div {
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.74);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.stats span {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-}
-
-.stats strong {
-  display: block;
-  margin-top: 4px;
-  color: var(--ink);
-  font-size: 22px;
-  line-height: 1.1;
+  border-color: var(--sim-ui-ink);
 }
 
 .lane-strip {
   position: relative;
-  height: 34px;
-  border: 1px solid var(--line-strong);
+  height: 32px;
+  margin-top: 8px;
+  border: 1px solid var(--sim-ui-line-strong);
   border-radius: 8px;
   background:
     linear-gradient(180deg, #5d6870, #2d363c),
@@ -201,7 +43,7 @@
 .lane-strip::before {
   content: '';
   position: absolute;
-  inset: 16px 0 auto;
+  inset: 15px 0 auto;
   border-top: 2px dashed rgba(255, 248, 214, 0.75);
 }
 
@@ -209,7 +51,7 @@
   position: absolute;
   top: 7px;
   width: 5px;
-  height: 20px;
+  height: 18px;
   transform: translateX(-50%);
   border-radius: 3px;
   background: #ffd166;
@@ -217,12 +59,10 @@
 }
 
 .graph-frame {
-  min-height: 480px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #f6fbf8;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .graph {
@@ -235,7 +75,6 @@
 .track-scene {
   width: 100%;
   height: 100%;
-  min-height: 480px;
   cursor: grab;
   touch-action: none;
 }
@@ -258,85 +97,18 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.58;
-  vector-effect: non-scaling-stroke;
 }
 
 .analysis-trace {
-  opacity: 0.48;
+  opacity: 0.72;
+  stroke-width: 1.5;
 }
 
 .axis-line {
-  stroke: rgba(24, 36, 43, 0.34);
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-}
-
-.axis-line.depth {
-  stroke-dasharray: 8 7;
+  stroke: rgba(24, 36, 43, 0.38);
+  stroke-width: 2;
 }
 
 .corner-axis {
-  stroke: rgba(24, 36, 43, 0.42);
-}
-
-@media (max-width: 860px) {
-  .topbar {
-    align-items: start;
-    flex-direction: column;
-  }
-
-  .top-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .top-actions .segmented {
-    width: 100%;
-  }
-
-  .top-actions .view-switcher {
-    grid-auto-flow: row;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .top-actions .view-switcher button {
-    min-width: 0;
-    border-bottom: 1px solid var(--line-strong);
-    white-space: normal;
-  }
-
-  .top-actions .view-switcher button:nth-child(2n) {
-    border-right: 0;
-  }
-
-  .top-actions .view-switcher button:last-child {
-    grid-column: 1 / -1;
-    border-bottom: 0;
-  }
-
-  .topbar h1 {
-    font-size: 34px;
-  }
-
-  .workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .controls {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .stats {
-    grid-template-columns: 1fr;
-  }
-
-  .graph-frame {
-    min-height: 420px;
-  }
-
-  .three-phase,
-  .track-scene {
-    min-height: 420px;
-  }
+  stroke: rgba(24, 36, 43, 0.5);
 }
